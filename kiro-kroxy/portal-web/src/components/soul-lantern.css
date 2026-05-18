@@ -1,0 +1,119 @@
+/* SoulLantern — pixel-art loader visual primitives.
+ *
+ * Motion breakdown:
+ *   - .soul-lantern-sprite    bobs up and down with a subtle sway
+ *   - .soul-lantern-flicker   wick overlay fades/pulses on a different period
+ *                             so the light looks alive, not clockwork
+ *   - .soul-lantern-halo      soft radial glow under the lantern
+ *   - .soul-lantern-ember-*   two embers drift up from the wick on phases
+ *   - .soul-lantern-caption   per-line fade-in when caption cycles
+ *
+ * All motion respects prefers-reduced-motion — we fall back to static states.
+ */
+
+.soul-lantern-wrap {
+  position: relative;
+  display: inline-block;
+  overflow: visible;
+  image-rendering: pixelated;
+}
+
+.soul-lantern-sprite {
+  position: relative;
+  display: block;
+  animation: lantern-bob 3200ms ease-in-out infinite;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35));
+}
+
+@keyframes lantern-bob {
+  0%, 100% { transform: translateY(0)    rotate(-0.6deg); }
+  50%      { transform: translateY(-3px) rotate(0.6deg);  }
+}
+
+.soul-lantern-halo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 160%;
+  height: 160%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    closest-side,
+    rgba(255, 190, 80, 0.38),
+    rgba(255, 150, 50, 0.12) 55%,
+    rgba(255, 150, 50, 0) 72%
+  );
+  filter: blur(6px);
+  pointer-events: none;
+  animation: lantern-halo 2600ms ease-in-out infinite;
+}
+
+@keyframes lantern-halo {
+  0%, 100% { opacity: 0.55; transform: translate(-50%, -50%) scale(1);    }
+  50%      { opacity: 0.95; transform: translate(-50%, -50%) scale(1.08); }
+}
+
+.soul-lantern-flicker {
+  transform-origin: 8px 8px;
+  animation: lantern-flicker 1700ms ease-in-out infinite;
+}
+
+@keyframes lantern-flicker {
+  0%        { opacity: 0.0; }
+  25%       { opacity: 0.85; }
+  40%       { opacity: 0.35; }
+  60%       { opacity: 0.9;  }
+  75%       { opacity: 0.25; }
+  100%      { opacity: 0.0; }
+}
+
+.soul-lantern-ember {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: 3px;
+  height: 3px;
+  background: #ffc76a;
+  box-shadow: 0 0 4px rgba(255, 180, 80, 0.9);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 0);
+}
+
+.soul-lantern-ember-a {
+  animation: ember-rise 3400ms ease-in infinite;
+}
+
+.soul-lantern-ember-b {
+  left: 55%;
+  width: 2px;
+  height: 2px;
+  animation: ember-rise 4200ms ease-in 900ms infinite;
+}
+
+@keyframes ember-rise {
+  0%   { opacity: 0;   transform: translate(-50%, 0)    scale(1); }
+  15%  { opacity: 0.9; transform: translate(-50%, -6px) scale(1); }
+  100% { opacity: 0;   transform: translate(-80%, -48px) scale(0.4); }
+}
+
+.soul-lantern-caption {
+  animation: lantern-caption-in 520ms ease-out;
+}
+
+@keyframes lantern-caption-in {
+  0%   { opacity: 0; transform: translateY(3px); }
+  100% { opacity: 1; transform: translateY(0);   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .soul-lantern-sprite,
+  .soul-lantern-halo,
+  .soul-lantern-flicker,
+  .soul-lantern-ember,
+  .soul-lantern-caption {
+    animation: none !important;
+  }
+  .soul-lantern-flicker { opacity: 0.7; }
+  .soul-lantern-halo    { opacity: 0.7; }
+}

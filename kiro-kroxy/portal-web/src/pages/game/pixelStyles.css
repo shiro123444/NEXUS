@@ -1,0 +1,66 @@
+/* Pixel-art presentation layer for the game module.
+ * Keep this file small — only visual primitives that don't depend on state.
+ * Tailwind handles layout; these classes give us crisp sprites, shake feedback,
+ * a pixel-friendly font stack, and a couple of reusable keyframes.
+ */
+
+.pixel-canvas,
+.pixel-canvas img {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  -ms-interpolation-mode: nearest-neighbor;
+}
+
+.pixel-font {
+  font-family: "Zpix", "方舟像素", "Press Start 2P", ui-monospace, monospace;
+  letter-spacing: 0.04em;
+}
+
+.pixel-border {
+  border-image-slice: 2;
+  border-image-width: 2;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+}
+
+.pixel-shake {
+  animation: pixel-shake 180ms steps(3) 1;
+}
+
+@keyframes pixel-shake {
+  0%   { transform: translate(0, 0); }
+  33%  { transform: translate(-2px, 1px); }
+  66%  { transform: translate(2px, -1px); }
+  100% { transform: translate(0, 0); }
+}
+
+.pixel-breathing {
+  animation: pixel-breath 2400ms ease-in-out infinite;
+}
+
+@keyframes pixel-breath {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-1px); }
+}
+
+.pixel-scanlines {
+  background-image: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.08) 2px,
+    rgba(0, 0, 0, 0.08) 3px
+  );
+  background-size: 100% 3px;
+  pointer-events: none;
+}
+
+.pixel-hp-bar {
+  background: repeating-linear-gradient(
+    90deg,
+    currentColor 0,
+    currentColor 4px,
+    transparent 4px,
+    transparent 5px
+  );
+}

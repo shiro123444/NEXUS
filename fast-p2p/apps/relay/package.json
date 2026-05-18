@@ -1,0 +1,22 @@
+{
+  "name": "@fast-p2p/relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/apps/relay/src/index.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "1.19.14",
+    "hono": "4.12.15",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "25.5.2",
+    "@types/ws": "8.18.1",
+    "tsx": "^4.21.0",
+    "typescript": "6.0.2"
+  }
+}

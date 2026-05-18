@@ -1,0 +1,42 @@
+{
+  "name": "@tui-framework/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./core": "./src/core/index.ts",
+    "./solid": "./src/solid/index.ts",
+    "./components": "./src/components/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "tsx --test test/**/*.test.ts",
+    "install:apps": "npm ci --prefix apps/relay && npm ci --prefix apps/web",
+    "build:apps": "npm run relay:build && npm run web:build",
+    "deploy:check": "npm test && npm run build:apps",
+    "relay:install": "npm install --prefix apps/relay",
+    "relay:dev": "npm --prefix apps/relay run dev",
+    "relay:build": "npm --prefix apps/relay run build",
+    "web:install": "npm install --prefix apps/web",
+    "web:dev": "npm --prefix apps/web run dev",
+    "web:build": "npm --prefix apps/web run build"
+  },
+  "peerDependencies": {
+    "solid-js": "*"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
+    "hyperswarm": "4.17.0",
+    "qrcode": "1.5.4",
+    "qrcode-terminal": "0.12.0",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.9",
+    "playwright-core": "^1.59.1",
+    "tsx": "^4.21.0"
+  }
+}

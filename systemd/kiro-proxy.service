@@ -1,0 +1,16 @@
+[Unit]
+Description=Kiro API Proxy Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Kiro-Kroxy
+ExecStart=/root/Kiro-Kroxy/venv/bin/python /root/Kiro-Kroxy/run.py --no-ui 8081
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

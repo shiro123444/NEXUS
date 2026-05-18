@@ -1,0 +1,16 @@
+[Unit]
+Description=FAST-P2P WebSocket Relay
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/FAST-P2P/apps/relay
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+ExecStart=/root/.local/share/fnm/aliases/default/bin/node dist/apps/relay/src/index.js
+Restart=on-failure
+RestartSec=5s
+User=root
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FAST-P2P 无障碍测试清单</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+    }
+    
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+    }
+    
+    .section {
+      margin-bottom: 30px;
+    }
+    
+    .section h2 {
+      color: #444;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+    
+    .checklist {
+      list-style: none;
+    }
+    
+    .checklist li {
+      padding: 12px;
+      margin-bottom: 8px;
+      background: #f9f9f9;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .checklist input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+    }
+    
+    .checklist li.checked {
+      background: #e8f5e9;
+      text-decoration: line-through;
+      color: #666;
+    }
+    
+    .priority {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    
+    .priority.critical {
+      background: #ffebee;
+      color: #c62828;
+    }
+    
+    .priority.high {
+      background: #fff3e0;
+      color: #ef6c00;
+    }
+    
+    .priority.medium {
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+    
+    .stats {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f5f5f5;
+      border-radius: 8px;
+    }
+    
+    .stat {
+      flex: 1;
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 32px;
+      font-weight: bold;
+      color: #333;
+    }
+    
+    .stat-label {
+      color: #666;
+      font-size: 14px;
+    }
+    
+    .progress-bar {
+      height: 30px;
+      background: #e0e0e0;
+      border-radius: 15px;
+      overflow: hidden;
+      margin-bottom: 30px;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4caf50, #8bc34a);
+      transition: width 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+    }
+    
+    .links {
+      display: flex;
+      gap: 15px;
+      margin-top: 30px;
+    }
+    
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      transition: transform 0.2s;
+    }
+    
+    .btn:hover {
+      transform: translateY(-2px);
+    }
+    
+    .btn-primary {
+      background: #2196f3;
+      color: white;
+    }
+    
+    .btn-secondary {
+      background: #757575;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎯 FAST-P2P 无障碍测试清单</h1>
+    <p class="subtitle">修复完成后的验证测试 - 2026-04-06</p>
+    
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-value" id="total">0</div>
+        <div class="stat-label">总测试项</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="completed">0</div>
+        <div class="stat-label">已完成</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="percentage">0%</div>
+        <div class="stat-label">完成率</div>
+      </div>
+    </div>
+    
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress" style="width: 0%">0%</div>
+    </div>
+    
+    <div class="section">
+      <h2>🔴 严重问题验证</h2>
+      <ul class="checklist" id="critical">
+        <li>
+          <input type="checkbox" id="c1">
+          <label for="c1"><span class="priority critical">严重</span> 所有按钮都有 aria-label 属性</label>
+        </li>
+        <li>
+          <input type="checkbox" id="c2">
+          <label for="c2"><span class="priority critical">严重</span> 所有输入框都有关联的 label 标签</label>
+        </li>
+        <li>
+          <input type="checkbox" id="c3">
+          <label for="c3"><span class="priority critical">严重</span> 文本颜色对比度至少 4.5:1</label>
+        </li>
+        <li>
+          <input type="checkbox" id="c4">
+          <label for="c4"><span class="priority critical">严重</span> 所有触摸目标至少 44x44px</label>
+        </li>
+        <li>
+          <input type="checkbox" id="c5">
+          <label for="c5"><span class="priority critical">严重</span> 进度条有 role="progressbar" 和 aria-valuenow</label>
+        </li>
+      </ul>
+    </div>
+    
+    <div class="section">
+      <h2>🟡 键盘导航测试</h2>
+      <ul class="checklist" id="keyboard">
+        <li>
+          <input type="checkbox" id="k1">
+          <label for="k1"><span class="priority high">高</span> Tab 键可以访问所有交互元素</label>
+        </li>
+        <li>
+          <input type="checkbox" id="k2">
+          <label for="k2"><span class="priority high">高</span> 焦点顺序符合视觉顺序</label>
+        </li>
+        <li>
+          <input type="checkbox" id="k3">
+          <label for="k3"><span class="priority high">高</span> 焦点状态清晰可见 (3px 边框)</label>
+        </li>
+        <li>
+          <input type="checkbox" id="k4">
+          <label for="k4"><span class="priority high">高</span> Enter/Space 可以激活按钮</label>
+        </li>
+        <li>
+          <input type="checkbox" id="k5">
+          <label for="k5"><span class="priority high">高</span> 文件上传区域支持键盘操作</label>
+        </li>
+        <li>
+          <input type="checkbox" id="k6">
+          <label for="k6"><span class="priority high">高</span> 没有键盘陷阱</label>
+        </li>
+      </ul>
+    </div>
+    
+    <div class="section">
+      <h2>🔊 屏幕阅读器测试</h2>
+      <ul class="checklist" id="screenreader">
+        <li>
+          <input type="checkbox" id="s1">
+          <label for="s1"><span class="priority high">高</span> 按钮被正确朗读 (包括 aria-label)</label>
+        </li>
+        <li>
+          <input type="checkbox" id="s2">
+          <label for="s2"><span class="priority high">高</span> 输入框标签被正确朗读</label>
+        </li>
+        <li>
+          <input type="checkbox" id="s3">
+          <label for="s3"><span class="priority high">高</span> 进度条百分比被朗读</label>
+        </li>
+        <li>
+          <input type="checkbox" id="s4">
+          <label for="s4"><span class="priority high">高</span> 状态变化被通知 (aria-live)</label>
+        </li>
+        <li>
+          <input type="checkbox" id="s5">
+          <label for="s5"><span class="priority high">高</span> 图片有描述性 alt 文本</label>
+        </li>
+      </ul>
+    </div>
+    
+    <div class="section">
+      <h2>📱 移动端触摸测试</h2>
+      <ul class="checklist" id="mobile">
+        <li>
+          <input type="checkbox" id="m1">
+          <label for="m1"><span class="priority high">高</span> 所有按钮易于点击 (至少 44x44px)</label>
+        </li>
+        <li>
+          <input type="checkbox" id="m2">
+          <label for="m2"><span class="priority high">高</span> 触摸反馈明显 (active 状态)</label>
+        </li>
+        <li>
+          <input type="checkbox" id="m3">
+          <label for="m3"><span class="priority high">高</span> 页面可以缩放 (无 user-scalable=no)</label>
+        </li>
+        <li>
+          <input type="checkbox" id="m4">
+          <label for="m4"><span class="priority high">高</span> 拖拽上传在触摸设备上正常工作</label>
+        </li>
+        <li>
+          <input type="checkbox" id="m5">
+          <label for="m5"><span class="priority medium">中</span> 横屏模式下布局正常</label>
+        </li>
+      </ul>
+    </div>
+    
+    <div class="section">
+      <h2>🎨 视觉和动画测试</h2>
+      <ul class="checklist" id="visual">
+        <li>
+          <input type="checkbox" id="v1">
+          <label for="v1"><span class="priority medium">中</span> 颜色对比度工具验证通过</label>
+        </li>
+        <li>
+          <input type="checkbox" id="v2">
+          <label for="v2"><span class="priority medium">中</span> prefers-reduced-motion 生效</label>
+        </li>
+        <li>
+          <input type="checkbox" id="v3">
+          <label for="v3"><span class="priority medium">中</span> 动画流畅 (60fps)</label>
+        </li>
+        <li>
+          <input type="checkbox" id="v4">
+          <label for="v4"><span class="priority medium">中</span> 无布局抖动</label>
+        </li>
+      </ul>
+    </div>
+    
+    <div class="section">
+      <h2>🔧 功能测试</h2>
+      <ul class="checklist" id="functional">
+        <li>
+          <input type="checkbox" id="f1">
+          <label for="f1"><span class="priority high">高</span> 创建房间功能正常</label>
+        </li>
+        <li>
+          <input type="checkbox" id="f2">
+          <label for="f2"><span class="priority high">高</span> 加入房间功能正常</label>
+        </li>
+        <li>
+          <input type="checkbox" id="f3">
+          <label for="f3"><span class="priority high">高</span> 文件上传功能正常</label>
+        </li>
+        <li>
+          <input type="checkbox" id="f4">
+          <label for="f4"><span class="priority high">高</span> 文件下载功能正常</label>
+        </li>
+        <li>
+          <input type="checkbox" id="f5">
+          <label for="f5"><span class="priority high">高</span> 进度显示准确</label>
+        </li>
+        <li>
+          <input type="checkbox" id="f6">
+          <label for="f6"><span class="priority medium">中</span> 二维码生成正常</label>
+        </li>
+        <li>
+          <input type="checkbox" id="f7">
+          <label for="f7"><span class="priority medium">中</span> 复制功能正常</label>
+        </li>
+      </ul>
+    </div>
+    
+    <div class="links">
+      <a href="http://localhost:5173/" class="btn btn-primary" target="_blank">🚀 打开应用测试</a>
+      <a href="https://webaim.org/resources/contrastchecker/" class="btn btn-secondary" target="_blank">🎨 对比度检查工具</a>
+    </div>
+  </div>
+  
+  <script>
+    // 统计和进度更新
+    function updateStats() {
+      const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+      const total = checkboxes.length;
+      const completed = Array.from(checkboxes).filter(cb => cb.checked).length;
+      const percentage = Math.round((completed / total) * 100);
+      
+      document.getElementById('total').textContent = total;
+      document.getElementById('completed').textContent = completed;
+      document.getElementById('percentage').textContent = percentage + '%';
+      
+      const progressBar = document.getElementById('progress');
+      progressBar.style.width = percentage + '%';
+      progressBar.textContent = percentage + '%';
+      
+      // 保存到 localStorage
+      const state = {};
+      checkboxes.forEach(cb => {
+        state[cb.id] = cb.checked;
+      });
+      localStorage.setItem('testState', JSON.stringify(state));
+    }
+    
+    // 恢复状态
+    function restoreState() {
+      const saved = localStorage.getItem('testState');
+      if (saved) {
+        const state = JSON.parse(saved);
+        Object.keys(state).forEach(id => {
+          const checkbox = document.getElementById(id);
+          if (checkbox) {
+            checkbox.checked = state[id];
+            if (state[id]) {
+              checkbox.parentElement.classList.add('checked');
+            }
+          }
+        });
+      }
+      updateStats();
+    }
+    
+    // 监听所有复选框
+    document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+      checkbox.addEventListener('change', function() {
+        if (this.checked) {
+          this.parentElement.classList.add('checked');
+        } else {
+          this.parentElement.classList.remove('checked');
+        }
+        updateStats();
+      });
+    });
+    
+    // 初始化
+    restoreState();
+  </script>
+</body>
+</html>

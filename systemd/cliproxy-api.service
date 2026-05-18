@@ -1,0 +1,17 @@
+[Unit]
+Description=CLIProxyAPI Management Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/cliproxy-api
+ExecStart=/opt/cliproxy-api/cli-proxy-api -config /opt/cliproxy-api/config.yaml
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment=HOME=/root
+
+[Install]
+WantedBy=multi-user.target

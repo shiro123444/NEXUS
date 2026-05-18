@@ -1,0 +1,11 @@
+node_modules
+apps/*/node_modules
+dist
+apps/*/dist
+*.log
+*.err.log
+*.out.log
+.git
+.artifacts
+apps/web/.artifacts
+output

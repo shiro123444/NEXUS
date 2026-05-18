@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Toast</title>
+</head>
+<body>
+    <h1>Testing Toast Notification</h1>
+    <p>Open the console and navigate to <a href="http://localhost:5174" target="_blank">http://localhost:5174</a></p>
+    <p>Then run this in the console:</p>
+    <pre>
+// Wait for page to load, create a room, then test copy
+setTimeout(() => {
+    // Click create button
+    const createBtn = document.querySelector('.action-button-primary');
+    if (createBtn) {
+        createBtn.click();
+        console.log('Clicked create button');
+        
+        // Wait for room to be created, then click copy
+        setTimeout(() => {
+            const copyBtn = document.querySelector('.text-button');
+            if (copyBtn && !copyBtn.disabled) {
+                copyBtn.click();
+                console.log('Clicked copy button - Toast should appear!');
+            }
+        }, 2000);
+    }
+}, 1000);
+    </pre>
+</body>
+</html>

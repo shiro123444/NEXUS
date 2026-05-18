@@ -1,0 +1,32 @@
+{
+  "name": "@fast-p2p/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build"
+  },
+  "dependencies": {
+    "@fast-p2p/shared": "file:../../packages/shared",
+    "@fontsource/noto-sans-sc": "^5.2.9",
+    "@noble/ciphers": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
+    "motion": "^12.38.0",
+    "qrcode": "1.5.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-router-dom": "7.14.0",
+    "three": "^0.183.2",
+    "troika-three-text": "^0.52.4"
+  },
+  "devDependencies": {
+    "@types/qrcode": "1.5.6",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@types/three": "^0.183.1",
+    "@vitejs/plugin-react": "6.0.1",
+    "typescript": "6.0.2",
+    "vite": "8.0.3"
+  }
+}

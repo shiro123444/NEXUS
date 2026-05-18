@@ -1,0 +1,23 @@
+tunnel: 225280c0-c1fc-4746-a8b4-9e9d32de0bbd
+credentials-file: /root/.cloudflared/225280c0-c1fc-4746-a8b4-9e9d32de0bbd.json
+
+ingress:
+  - hostname: portal.wbuai.me
+    service: http://127.0.0.1:8080
+  - hostname: api.wbuai.me
+    service: http://127.0.0.1:8990
+  - hostname: openai.wbuai.me
+    service: https://127.0.0.1:443
+    originRequest:
+      noTLSVerify: true
+  - hostname: timetable.wbuai.me
+    service: http://127.0.0.1:8092
+  - hostname: clash.wbuai.me
+    service: http://127.0.0.1:8093
+  - hostname: p2p.wbuai.me
+    service: https://127.0.0.1:443
+    originRequest:
+      noTLSVerify: true
+  - hostname: edufish.wbuai.me
+    service: http://127.0.0.1:3025
+  - service: http_status:404

@@ -1,0 +1,15 @@
+[Unit]
+Description=MetaCubeXD Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/metacubexd-gateway
+EnvironmentFile=/etc/metacubexd-gateway.env
+ExecStart=/root/.local/share/fnm/node-versions/v20.19.6/installation/bin/node /opt/metacubexd-gateway/server.mjs
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

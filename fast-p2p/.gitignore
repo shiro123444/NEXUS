@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.codex
+task_plan.md
+findings.md
+progress.md
+p2p.ts
+*.log
+*.err.log
+*.out.log
+.artifacts/
+apps/web/.artifacts/

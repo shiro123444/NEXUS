@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cinema Scroll Layout"
+  short_description: "Build immersive fixed-stage scrollytelling layouts"
+  default_prompt: "Use $cinema-scroll-layout to build a fixed-stage scrollytelling page with mobile fallback and anti-flicker checks."

@@ -1,0 +1,75 @@
+api-keys:
+  - sk-wbuai-YOUR_PORTAL_KEY
+auth-dir: /root/.cli-proxy-api
+commercial-mode: false
+debug: true
+error-logs-max-files: 10
+force-model-prefix: false
+host: 127.0.0.1
+logging-to-file: true
+logs-max-total-size-mb: 500
+openai-compatibility:
+  - api-key-entries:
+      - api-key: YOUR_API_KEY
+    base-url: https://cfbt.ccwu.cc/v1
+    models:
+      - alias: kimi-k2.6
+        name: '@cf/moonshotai/kimi-k2.6'
+    name: kimi
+  - name: Ark
+    base-url: https://windhub.cc/v1
+    api-key-entries:
+      - api-key: YOUR_API_KEY
+    models:
+      - name: gpt-5.4
+        alias: ""
+      - name: gpt-5.3-codex
+        alias: ""
+      - name: gpt-5.4-mini
+        alias: ""
+      - name: gpt-5.2
+        alias: ""
+claude-api-key:
+  - api-key: YOUR_API_KEY
+    base-url: https://token-plan-sgp.xiaomimimo.com/anthropic
+    proxy-url: ""
+    models:
+      - name: mimo-v2.5-pro
+        alias: ""
+      - name: mimo-v2.5
+        alias: ""
+      - name: mimo-v2.5-tts
+        alias: ""
+      - name: mimo-v2.5-tts-voicedesign
+        alias: ""
+      - name: mimo-v2.5-tts-voiceclone
+        alias: ""
+      - name: mimo-v2-pro
+        alias: ""
+      - name: mimo-v2-flash
+        alias: ""
+      - name: mimo-v2-omni
+        alias: ""
+      - name: mimo-v2-tts
+        alias: ""
+passthrough-headers: false
+port: 8317
+pprof:
+  addr: 127.0.0.1:8316
+  enable: false
+proxy-url: http://127.0.0.1:7890
+remote-management:
+  allow-remote: true
+  disable-auto-update-panel: false
+  disable-control-panel: false
+  panel-github-repository: https://github.com/router-for-me/Cli-Proxy-API-Management-Center
+  secret-key: YOUR_SECRET_KEY
+retry-count: 3
+timeout: 600
+tls:
+  cert: ''
+  enable: false
+  key: ''
+usage-integration:
+  enable: false
+usage-statistics-enabled: true

@@ -1,0 +1,17 @@
+[Unit]
+Description=Kiro-Kroxy User Portal (Port 8080)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Kiro-Kroxy
+ExecStart=/root/Kiro-Kroxy/venv/bin/python -m uvicorn kiro_proxy.portal.user_app:app --host 0.0.0.0 --port 8080 --workers 4
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

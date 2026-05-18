@@ -1,0 +1,55 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.egg-info/
+
+# ── Node ──
+node_modules/
+dist/
+*.tsbuildinfo
+
+# ── Secrets & Credentials ──
+*.pem
+*.key
+*.crt
+*.p12
+.env
+.env.*
+config.yaml
+!config.example.yaml
+quota_key.json
+new_key.json
+cookies.txt
+*.har
+
+# ── Databases ──
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ── User Data ──
+game_images/
+avatars/
+backgrounds/
+backups/
+downloads/
+debug_requests/
+
+# ── Logs ──
+*.log
+
+# ── IDE / OS ──
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ── Temp files ──
+*.swp
+*.swo
+*_backup*
+*.bak

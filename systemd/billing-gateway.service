@@ -1,0 +1,18 @@
+[Unit]
+Description=Billing Gateway for AI Proxy (port 8300)
+After=network.target cliproxy-api.service
+Requires=cliproxy-api.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/billing-gateway
+ExecStart=/opt/billing-gateway/venv/bin/python /opt/billing-gateway/gateway.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,131 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+*.egg-info/
+
+# Build
+build/
+dist/
+release/
+*.spec
+!KiroProxy.spec
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Service files (generated)
+start_kiro_proxy.vbs
+start_kiro_proxy_debug.vbs
+
+# HAR files (contain sensitive data)
+*.har
+
+# Logs
+*.log
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+.kiro-proxy/
+
+# Test files
+[0-9].txt
+[0-9][0-9].txt
+线索*.txt
+tests/*.pyc
+tests/__pycache__/
+
+# Temp analysis files
+flows
+flows_*
+traffic.mitm
+*.mitm
+analyze_har.py
+parse_*.py
+*_analysis.txt
+*_check.txt
+hex_dump.txt
+parsed_*.txt
+response.txt
+参考.txt
+
+# Other projects
+Antigravity-Manager/
+cc-switch/
+kiro.rs-fork/
+
+# ── 敏感文件（绝对不要提交）──
+# Cloudflare 源站 SSL 证书和私钥
+*.pem
+*.key
+*.crt
+*.p12
+
+# 凭证和密钥文件
+new_key.json
+quota_key.json
+cookies.txt
+.env
+.env.*
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 上传的背景图片
+kiro_proxy/web/static/backgrounds/
+kiro_proxy/web/static/active_bg.txt
+kiro_proxy/web/static/active_bg_opacity.txt
+
+# 自动部署日志
+auto_deploy.log
+cron.log
+service_8080.log
+service_8081.log
+
+# ── 用户生成内容（AI 图片、头像）──
+kiro_proxy/web/static/game_images/
+kiro_proxy/web/static/avatars/
+
+# ── 备份与迁移数据 ──
+backups/
+downloads/
+debug_requests/
+
+# ── 临时脚本和设计稿 ──
+1.png
+extract.py
+fix_*.py
+modify_*.py
+patch_*.py
+email-design-*.html
+portal_ui_*.html
+script_logic.js
+
+# ── 数据提取输出 ──
+docs/README_extraction.txt
+docs/patch_*.txt
+docs/patch_*.tsv
+
+# ── 实验性运行时 ──
+kiro-go-runtime/
+kiro.rs-runtime/
+
+# ── 其他实验性运行时 ──
+.kiro-server/
+kiro.rs/
+
+# ── 临时补丁脚本 ──
+portal-web/patch_auth.js
