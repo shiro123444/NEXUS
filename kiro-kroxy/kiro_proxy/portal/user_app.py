@@ -2972,7 +2972,8 @@ async def _proxy_image_playground_request(request: Request, action: str):
             if result is not None:
                 return result
         elif action == "edits":
-            result = await _try_soruxgpt_image_edit(body, _finalize_bg, u["uid"], usage_id)
+            ct = request.headers.get("content-type", "")
+            result = await _try_soruxgpt_image_edit(body, ct, _finalize_bg, u["uid"], usage_id)
             if result is not None:
                 return result
 
@@ -3259,6 +3260,160 @@ async def _run_soruxgpt_image_gen(task_id: str, prompt: str, n: int, size: str,
     _image_playground_log(f"generation error task={task_id} uid={uid}: {err_msg}")
 
 
+async def _run_soruxgpt_image_edit(task_id: str, prompt: str, image_b64s: list[str],
+                                    mask_b64: str | None, size: str, model: str,
+                                    _finalize_bg, uid: int, usage_id: int):
+    """Background task: call SoruxGPT Responses API with reference images."""
+    headers = {"Authorization": f"Bearer {SORUXGPT_API_KEY}", "Content-Type": "application/json"}
+    retryable_statuses = {408, 502, 503, 504}
+    prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+    def _collect_b64_values(obj, found: list[str]) -> None:
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if key in {"b64_json", "image_b64", "partial_image_b64"} and isinstance(value, str) and value:
+                    found.append(value)
+                else:
+                    _collect_b64_values(value, found)
+        elif isinstance(obj, list):
+            for item in obj:
+                _collect_b64_values(item, found)
+
+    async def _save_image_bytes(image_bytes: bytes, index: int) -> dict | None:
+        try:
+            fname = f"playground_{prompt_hash[:16]}_{int(time.time())}_{index}.png"
+            fpath = GAME_IMAGE_DIR / fname
+            await asyncio.to_thread(fpath.write_bytes, image_bytes)
+            return {
+                "b64_json": base64.b64encode(image_bytes).decode("utf-8"),
+                "url": f"{GAME_IMAGE_URL_PREFIX}/{fname}",
+            }
+        except Exception:
+            _image_playground_log(f"edit image_save_failed task={task_id} uid={uid}")
+            return None
+
+    async def _items_from_b64s(b64_values: list[str]) -> list[dict]:
+        items = []
+        seen = set()
+        for b64 in b64_values:
+            if not b64 or b64 in seen:
+                continue
+            seen.add(b64)
+            try:
+                image_bytes = base64.b64decode(b64)
+            except Exception:
+                continue
+            item = await _save_image_bytes(image_bytes, len(items) + 1)
+            if item:
+                items.append(item)
+        return items
+
+    # Build Responses API payload with input_image
+    input_content = [{"type": "input_text", "text": prompt}]
+    for img_b64 in image_b64s:
+        input_content.append({
+            "type": "input_image",
+            "image_url": f"data:image/png;base64,{img_b64}",
+        })
+
+    tool: dict = {
+        "type": "image_generation",
+        "model": model,
+        "size": size,
+        "quality": "auto",
+        "output_format": "png",
+        "moderation": "auto",
+    }
+
+    if mask_b64:
+        tool["input_image_mask"] = {"image_url": f"data:image/png;base64,{mask_b64}"}
+
+    stream_payload = {
+        "model": "gpt-5.4-mini",
+        "input": [{"type": "message", "role": "user", "content": input_content}],
+        "tools": [tool],
+        "tool_choice": "auto",
+        "store": False,
+        "stream": True,
+    }
+
+    last_err = IMAGE_PLAYGROUND_GENERIC_ERROR
+    for attempt in range(2):
+        latest_by_output: dict[str, str] = {}
+        completed_b64s: list[str] = []
+        _image_playground_log(f"edit stream_start task={task_id} uid={uid} attempt={attempt + 1}")
+        try:
+            async with soruxgpt_image_client.stream(
+                "POST", "/responses", headers=headers, json=stream_payload, timeout=None
+            ) as resp:
+                _image_playground_log(
+                    f"edit stream_response task={task_id} uid={uid} attempt={attempt + 1} status={resp.status_code}"
+                )
+                if resp.status_code in retryable_statuses:
+                    last_err = f"SoruxGPT edit stream HTTP {resp.status_code}"
+                    if attempt < 1:
+                        await asyncio.sleep(2.0)
+                        continue
+                if resp.status_code >= 400:
+                    try:
+                        err_data = json.loads((await resp.aread()).decode("utf-8", errors="replace"))
+                        last_err = _extract_error_message(err_data) or f"SoruxGPT edit stream HTTP {resp.status_code}"
+                    except Exception:
+                        snippet = (await resp.aread())[:300]
+                        last_err = snippet.decode("utf-8", errors="replace") or f"SoruxGPT edit stream HTTP {resp.status_code}"
+                    _image_playground_log(f"edit stream_http_error task={task_id} uid={uid}: {last_err}")
+                    break
+
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    raw = line[6:].strip()
+                    if not raw or raw == "[DONE]":
+                        continue
+                    try:
+                        event = json.loads(raw)
+                    except Exception:
+                        continue
+
+                    event_type = event.get("type", "")
+                    if event_type == "response.image_generation_call.partial_image":
+                        b64 = event.get("partial_image_b64")
+                        if b64:
+                            output_key = str(event.get("output_index", 0))
+                            latest_by_output[output_key] = b64
+                    elif event_type == "response.completed":
+                        _collect_b64_values(event.get("response", {}), completed_b64s)
+                    elif event_type in {"response.failed", "response.incomplete"}:
+                        last_err = _extract_error_message(event) or event_type
+
+                b64_values = completed_b64s or list(latest_by_output.values())
+                if b64_values:
+                    items = await _items_from_b64s(b64_values)
+                    if items:
+                        result_json = json.dumps({"created": int(time.time()), "data": items})
+                        cost_usd = portal_db._calculate_cost_usd(model, 0, 0)
+                        asyncio.get_running_loop().run_in_executor(
+                            None, _finalize_bg, uid, usage_id, 0, 0, cost_usd, "success"
+                        )
+                        await portal_db.update_playground_task(task_id, "done", result_json=result_json)
+                        _image_playground_log(f"edit done task={task_id} uid={uid}")
+                        return
+                last_err = last_err or "SoruxGPT edit stream returned no image"
+        except Exception as exc:
+            _image_playground_log(
+                f"edit stream_exception task={task_id} uid={uid} attempt={attempt + 1}: {exc!r}"
+            )
+            last_err = f"SoruxGPT edit stream failed: {type(exc).__name__}"
+        if attempt < 1:
+            await asyncio.sleep(2.0)
+
+    asyncio.get_running_loop().run_in_executor(
+        None, _finalize_bg, uid, usage_id, 0, 0, 0.0, "error"
+    )
+    await portal_db.update_playground_task(task_id, "error", error_message=last_err)
+    _image_playground_log(f"edit error task={task_id} uid={uid}: {last_err}")
+
+
 async def _try_soruxgpt_image_gen(body: bytes, _finalize_bg, uid: int, usage_id: int):
     """Start image generation as a background task, return task_id for polling.
 
@@ -3291,15 +3446,80 @@ async def _try_soruxgpt_image_gen(body: bytes, _finalize_bg, uid: int, usage_id:
     return JSONResponse({"task_id": task_id, "status": "processing"}, status_code=202)
 
 
-async def _try_soruxgpt_image_edit(body: bytes, _finalize_bg, uid: int, usage_id: int):
-    """Image editing is not supported via SoruxGPT /images/generations."""
-    asyncio.get_running_loop().run_in_executor(
-        None, _finalize_bg, uid, usage_id, 0, 0, 0.0, "error"
+async def _try_soruxgpt_image_edit(body: bytes, content_type: str, _finalize_bg, uid: int, usage_id: int):
+    """Parse multipart form data, extract reference images, generate via SoruxGPT Responses API."""
+    import email as _email
+    from email.message import Message
+
+    # Parse multipart form data
+    if "boundary=" not in (content_type or ""):
+        return JSONResponse(
+            {"error": {"message": "NEXUS image editing requires multipart form data with reference images."}},
+            status_code=400,
+        )
+
+    # Prepend Content-Type header so email parser can handle multipart body
+    mime_body = f"Content-Type: {content_type}\r\n\r\n".encode("utf-8") + body
+    msg: Message = _email.message_from_bytes(mime_body)
+
+    prompt = ""
+    size = "1024x1024"
+    model = "gpt-image-2"
+    image_parts: list[bytes] = []
+    mask_bytes: bytes | None = None
+
+    for part in msg.walk():
+        if part.get_content_maintype() == "multipart":
+            continue
+
+        name = part.get_param("name", header="content-disposition")
+        if not name:
+            continue
+
+        payload = part.get_payload(decode=True)
+        if payload is None:
+            continue
+
+        if name in ("prompt", "text"):
+            prompt = payload.decode("utf-8", errors="replace")
+        elif name == "size":
+            size = payload.decode("utf-8", errors="replace")
+        elif name == "model":
+            model = payload.decode("utf-8", errors="replace")
+        elif name == "image[]" or name == "image":
+            image_parts.append(payload)
+        elif name == "mask":
+            mask_bytes = payload
+
+    if not prompt:
+        return JSONResponse(
+            {"error": {"message": "Prompt is required for image editing."}},
+            status_code=400,
+        )
+
+    if not image_parts:
+        return JSONResponse(
+            {"error": {"message": "At least one reference image is required for editing."}},
+            status_code=400,
+        )
+
+    image_b64s: list[str] = []
+    for img_bytes in image_parts:
+        image_b64s.append(base64.b64encode(img_bytes).decode("utf-8"))
+
+    mask_b64 = base64.b64encode(mask_bytes).decode("utf-8") if mask_bytes else None
+
+    size = _normalize_soruxgpt_image_size(size)
+
+    task_id = str(uuid.uuid4())[:12]
+    await portal_db.create_playground_task(task_id)
+    await portal_db.cleanup_playground_tasks(ttl=600.0)
+
+    asyncio.create_task(
+        _run_soruxgpt_image_edit(task_id, prompt, image_b64s, mask_b64, size, model, _finalize_bg, uid, usage_id)
     )
-    return JSONResponse(
-        {"error": {"message": "NEXUS image editing is not available yet. Remove reference images and generate from text."}},
-        status_code=400,
-    )
+
+    return JSONResponse({"task_id": task_id, "status": "processing"}, status_code=202)
 
 
 @app.post("/api/image-playground/images/generations")
