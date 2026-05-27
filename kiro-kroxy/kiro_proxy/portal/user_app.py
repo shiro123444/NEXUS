@@ -7,7 +7,9 @@ import json
 import base64
 import shutil
 import asyncio
+import threading
 import httpx
+from dataclasses import dataclass
 import uuid
 import re
 import ssl
@@ -480,9 +482,9 @@ KIRO_UPSTREAM_API_KEY = (
 KIRO_NON_STREAM_TIMEOUT_SECS = float(os.environ.get("KIRO_NON_STREAM_TIMEOUT_SECS", "25"))
 OPENAI_PROXY_TARGET = os.environ.get("OPENAI_PROXY_TARGET", "http://127.0.0.1:8300")
 OPENAI_UPSTREAM_API_KEY = os.environ.get("OPENAI_UPSTREAM_API_KEY", "sk-wbuai-20260426-fd71f0d3").strip()
-MIMO_ANTHROPIC_TARGET = os.environ.get("MIMO_ANTHROPIC_TARGET", "https://fufu.iqach.top/anthropic")
-MIMO_ANTHROPIC_PROXY = os.environ.get("MIMO_ANTHROPIC_PROXY", "http://127.0.0.1:7890").strip()
-MIMO_ANTHROPIC_API_KEY = os.environ.get("MIMO_ANTHROPIC_API_KEY", "").strip()
+MIMO_ANTHROPIC_TARGET = os.environ.get("MIMO_ANTHROPIC_TARGET", "http://154.12.30.91:8000/anthropic")
+MIMO_ANTHROPIC_PROXY = os.environ.get("MIMO_ANTHROPIC_PROXY", "").strip()
+MIMO_ANTHROPIC_API_KEY = os.environ.get("MIMO_ANTHROPIC_API_KEY", "fyz040913").strip()
 BILLING_PRICE_FILE = Path("/opt/billing-gateway/data/model_prices.json")
 IMAGE_PLAYGROUND_DAILY_FREE_LIMIT = 20
 IMAGE_PLAYGROUND_GENERIC_ERROR = "Image generation failed: service unavailable, please try again"
@@ -510,6 +512,118 @@ mimo_anthropic_client = httpx.AsyncClient(
   timeout=None,
   proxy=MIMO_ANTHROPIC_PROXY or None,
 )
+
+# ─── Token Plan Key Pool ────────────────────────────────────────────────────────
+
+TOKEN_PLAN_KEYS_FILE = Path.home() / ".kiro-proxy" / "token_plan_keys.json"
+
+@dataclass
+class TokenPlanKey:
+    key: str
+    plan: str  # "pro" | "standard"
+    base_url_anthropic: str  # e.g. https://token-plan-sgp.xiaomimimo.com/anthropic
+    base_url_openai: str     # e.g. https://token-plan-sgp.xiaomimimo.com/v1
+    fail_count: int = 0
+    cooldown_until: float = 0.0
+    _client_anthropic: httpx.AsyncClient | None = None
+    _client_openai: httpx.AsyncClient | None = None
+
+    @property
+    def available(self) -> bool:
+        return time.time() >= self.cooldown_until
+
+    def get_client(self, protocol: str = "anthropic") -> httpx.AsyncClient:
+        if protocol == "openai":
+            if self._client_openai is None:
+                self._client_openai = httpx.AsyncClient(base_url=self.base_url_openai, timeout=None)
+            return self._client_openai
+        if self._client_anthropic is None:
+            self._client_anthropic = httpx.AsyncClient(base_url=self.base_url_anthropic, timeout=None)
+        return self._client_anthropic
+
+
+class TokenPlanPool:
+    """Smart load-balanced pool of Token Plan API keys.
+
+    - Round-robin within same priority tier
+    - Pro keys tried before Standard keys
+    - Failed keys get exponential backoff cooldown
+    - Falls back to default MIMO_ANTHROPIC_API_KEY when pool is exhausted
+    """
+
+    def __init__(self):
+        self.keys: list[TokenPlanKey] = []
+        self._lock = threading.Lock()
+        self._rr_index = 0
+        self._load_from_file()
+
+    def _load_from_file(self):
+        if not TOKEN_PLAN_KEYS_FILE.exists():
+            return
+        try:
+            data = json.loads(TOKEN_PLAN_KEYS_FILE.read_text())
+            loaded = []
+            for entry in data.get("keys", []):
+                k = TokenPlanKey(
+                    key=entry["key"],
+                    plan=entry.get("plan", "standard"),
+                    base_url_anthropic=entry["base_url_anthropic"],
+                    base_url_openai=entry.get("base_url_openai", entry["base_url_anthropic"].replace("/anthropic", "/v1")),
+                )
+                loaded.append(k)
+            with self._lock:
+                self.keys = loaded
+            print(f"[TokenPlan] Loaded {len(loaded)} keys from {TOKEN_PLAN_KEYS_FILE}")
+        except Exception as e:
+            print(f"[TokenPlan] Failed to load keys: {e}")
+
+    def reload(self):
+        self._load_from_file()
+
+    def get_next(self) -> TokenPlanKey | None:
+        """Get next available key, Pro first, then round-robin within tier."""
+        with self._lock:
+            available = [k for k in self.keys if k.available]
+            if not available:
+                return None
+            # Sort: pro (priority 0) before standard (priority 1)
+            available.sort(key=lambda k: 0 if k.plan == "pro" else 1)
+            idx = self._rr_index % len(available)
+            self._rr_index = (self._rr_index + 1) % len(available)
+            return available[idx]
+
+    def mark_failed(self, key: TokenPlanKey):
+        with self._lock:
+            key.fail_count += 1
+            backoff = min(30 * (2 ** (key.fail_count - 1)), 600)  # max 10 min
+            key.cooldown_until = time.time() + backoff
+            print(f"[TokenPlan] Key {key.key[:12]}... marked failed (cooldown {backoff}s, plan={key.plan})")
+
+    def mark_success(self, key: TokenPlanKey):
+        with self._lock:
+            if key.fail_count > 0:
+                key.fail_count = 0
+                key.cooldown_until = 0.0
+
+    def status(self) -> dict:
+        with self._lock:
+            return {
+                "total": len(self.keys),
+                "available": sum(1 for k in self.keys if k.available),
+                "keys": [
+                    {
+                        "prefix": k.key[:12] + "...",
+                        "plan": k.plan,
+                        "available": k.available,
+                        "fail_count": k.fail_count,
+                        "cooldown_remaining": max(0, int(k.cooldown_until - time.time())),
+                    }
+                    for k in self.keys
+                ],
+            }
+
+
+token_plan_pool = TokenPlanPool()
 
 # SoruxGPT Codex API for image generation via Responses API (SSE streaming)
 SORUXGPT_BASE_URL = "https://app.soruxgpt.com/api/codex/v1"
@@ -1338,6 +1452,18 @@ def _anthropic_messages_to_openai_body(body: dict, backend_model: str) -> dict:
   converted_tools = _anthropic_tools_to_openai(body.get("tools"))
   if converted_tools:
     openai_body["tools"] = converted_tools
+    tool_choice = body.get("tool_choice")
+    if isinstance(tool_choice, dict):
+      choice_type = str(tool_choice.get("type") or "").strip().lower()
+      if choice_type == "tool" and tool_choice.get("name"):
+        openai_body["tool_choice"] = {
+          "type": "function",
+          "function": {"name": tool_choice.get("name")},
+        }
+      elif choice_type in {"auto", "none"}:
+        openai_body["tool_choice"] = choice_type
+      elif choice_type in {"any", "required"}:
+        openai_body["tool_choice"] = "required"
   return openai_body
 
 
@@ -1774,6 +1900,11 @@ async def _proxy_openai_passthrough_chat_completions(request: Request, key_info:
 
 async def _proxy_openai_messages(request: Request, key_info: dict, public_model: str, backend_model: str, body: dict):
   request_body = _anthropic_messages_to_openai_body(body, backend_model)
+  estimated_input_tokens = _estimate_tokens(_extract_openai_request_text(request_body))
+  if request_body.get("stream"):
+    stream_options = dict(request_body.get("stream_options") or {})
+    stream_options["include_usage"] = True
+    request_body["stream_options"] = stream_options
   headers = _prepare_upstream_headers(request, key_info, upstream="openai")
 
   req = openai_proxy_client.build_request(
@@ -1785,14 +1916,24 @@ async def _proxy_openai_messages(request: Request, key_info: dict, public_model:
   r = await openai_proxy_client.send(req, stream=True)
 
   if request_body.get("stream"):
+    if r.status_code >= 400:
+      error_body = await r.aread()
+      try:
+        error_payload = json.loads(error_body)
+      except Exception:
+        error_payload = {"error": {"message": error_body.decode("utf-8", errors="ignore") or "Upstream error"}}
+      return JSONResponse(error_payload, status_code=r.status_code)
+
     async def event_stream():
       response_id = f"msg_{uuid.uuid4().hex}"
       sent_message_start = False
       text_block_started = False
       current_text_index = 0
+      next_block_index = 0
       chunks = []
       usage_obj = {}
-      stop_reason = "end_turn"
+      finish_reason = "stop"
+      tool_call_chunks: dict[int, dict] = {}
 
       async for chunk in r.aiter_text():
         chunks.append(chunk)
@@ -1817,7 +1958,7 @@ async def _proxy_openai_messages(request: Request, key_info: dict, public_model:
                 "role": "assistant",
                 "model": public_model,
                 "content": [],
-                "usage": {"input_tokens": 0, "output_tokens": 0},
+                "usage": {"input_tokens": estimated_input_tokens, "output_tokens": 0},
               },
             }
             yield f"event: message_start\ndata: {json.dumps(message_start, ensure_ascii=False)}\n\n".encode("utf-8")
@@ -1832,6 +1973,8 @@ async def _proxy_openai_messages(request: Request, key_info: dict, public_model:
             text = delta.get("content")
             if text:
               if not text_block_started:
+                current_text_index = next_block_index
+                next_block_index += 1
                 start_event = {
                   "type": "content_block_start",
                   "index": current_text_index,
@@ -1846,8 +1989,26 @@ async def _proxy_openai_messages(request: Request, key_info: dict, public_model:
               }
               yield f"event: content_block_delta\ndata: {json.dumps(delta_event, ensure_ascii=False)}\n\n".encode("utf-8")
 
+            for tool_delta in delta.get("tool_calls") or []:
+              try:
+                tool_index = int(tool_delta.get("index", len(tool_call_chunks)))
+              except Exception:
+                tool_index = len(tool_call_chunks)
+              tool_state = tool_call_chunks.setdefault(tool_index, {
+                "id": f"toolu_{uuid.uuid4().hex[:12]}",
+                "name": "",
+                "arguments_parts": [],
+              })
+              if tool_delta.get("id"):
+                tool_state["id"] = tool_delta["id"]
+              function = tool_delta.get("function") or {}
+              if function.get("name"):
+                tool_state["name"] = function["name"]
+              if function.get("arguments"):
+                tool_state["arguments_parts"].append(function["arguments"])
+
             if choice.get("finish_reason"):
-              stop_reason = _anthropic_stop_reason_from_openai(choice.get("finish_reason"))
+              finish_reason = choice.get("finish_reason")
 
         if False:
           yield b""
@@ -1856,11 +2017,51 @@ async def _proxy_openai_messages(request: Request, key_info: dict, public_model:
         stop_block = {"type": "content_block_stop", "index": current_text_index}
         yield f"event: content_block_stop\ndata: {json.dumps(stop_block, ensure_ascii=False)}\n\n".encode("utf-8")
 
+      for _, tool_state in sorted(tool_call_chunks.items()):
+        tool_block_index = next_block_index
+        next_block_index += 1
+        start_event = {
+          "type": "content_block_start",
+          "index": tool_block_index,
+          "content_block": {
+            "type": "tool_use",
+            "id": tool_state["id"],
+            "name": tool_state["name"],
+            "input": {},
+          },
+        }
+        yield f"event: content_block_start\ndata: {json.dumps(start_event, ensure_ascii=False)}\n\n".encode("utf-8")
+
+        input_json = "".join(tool_state["arguments_parts"])
+        if input_json:
+          delta_event = {
+            "type": "content_block_delta",
+            "index": tool_block_index,
+            "delta": {
+              "type": "input_json_delta",
+              "partial_json": input_json,
+            },
+          }
+          yield f"event: content_block_delta\ndata: {json.dumps(delta_event, ensure_ascii=False)}\n\n".encode("utf-8")
+
+        stop_event = {"type": "content_block_stop", "index": tool_block_index}
+        yield f"event: content_block_stop\ndata: {json.dumps(stop_event, ensure_ascii=False)}\n\n".encode("utf-8")
+
+      completion_payload = None
       if not usage_obj:
-        payload, usage_obj = _build_openai_completion_payload_from_stream(public_model, chunks)
+        completion_payload, usage_obj = _build_openai_completion_payload_from_stream(public_model, chunks)
+      prompt_tokens = int(usage_obj.get("prompt_tokens", 0) or usage_obj.get("input_tokens", 0) or 0)
+      completion_tokens = int(usage_obj.get("completion_tokens", 0) or usage_obj.get("output_tokens", 0) or 0)
+      if not (prompt_tokens or completion_tokens):
+        prompt_tokens, completion_tokens = _extract_openai_usage(completion_payload or {"choices": []}, request_body)
+        usage_obj = {
+          "prompt_tokens": prompt_tokens,
+          "completion_tokens": completion_tokens,
+          "total_tokens": prompt_tokens + completion_tokens,
+        }
       usage_event = {
         "type": "message_delta",
-        "delta": {"stop_reason": stop_reason, "stop_sequence": None},
+        "delta": {"stop_reason": _anthropic_stop_reason_from_openai(finish_reason, bool(tool_call_chunks)), "stop_sequence": None},
         "usage": _anthropic_usage_from_openai(usage_obj),
       }
       yield f"event: message_delta\ndata: {json.dumps(usage_event, ensure_ascii=False)}\n\n".encode("utf-8")
@@ -1910,63 +2111,166 @@ async def _proxy_openai_messages(request: Request, key_info: dict, public_model:
   return JSONResponse(_anthropic_response_from_openai(payload, public_model), status_code=r.status_code)
 
 
-async def _proxy_mimo_anthropic_messages(request: Request, key_info: dict, public_model: str, backend_model: str, body: dict):
-  request_body = dict(body)
-  request_body["model"] = backend_model
-  headers = {
-    k: v for k, v in request.headers.items()
-    if k.lower() not in ("host", "content-length", "authorization", "x-api-key")
-  }
-  headers["content-type"] = "application/json"
-  headers.setdefault("anthropic-version", "2023-06-01")
-  if MIMO_ANTHROPIC_API_KEY:
-    headers["x-api-key"] = MIMO_ANTHROPIC_API_KEY
-    headers["Authorization"] = f"Bearer {MIMO_ANTHROPIC_API_KEY}"
+async def _try_mimo_request_with_key(
+    token_key: TokenPlanKey,
+    request_body: dict,
+    headers: dict,
+    key_info: dict,
+    public_model: str,
+):
+    """Attempt MIMO request with a specific Token Plan key.
+    Returns (response | None, is_retryable: bool).
+    """
+    tk_headers = dict(headers)
+    tk_headers["x-api-key"] = token_key.key
+    tk_headers["Authorization"] = f"Bearer {token_key.key}"
 
-  req = mimo_anthropic_client.build_request(
-    "POST",
-    "/v1/messages",
-    headers=headers,
-    content=json.dumps(request_body).encode("utf-8"),
-  )
-  r = await mimo_anthropic_client.send(req, stream=True)
-
-  if request_body.get("stream"):
-    stream = _stream_and_track(r.aiter_raw(), key_info, public_model, upstream="openai")
-    return StreamingResponse(
-      stream,
-      status_code=r.status_code,
-      headers=dict(r.headers),
-      media_type=r.headers.get("content-type"),
+    client = token_key.get_client("anthropic")
+    req = client.build_request(
+        "POST",
+        "/v1/messages",
+        headers=tk_headers,
+        content=json.dumps(request_body).encode("utf-8"),
     )
+    r = await client.send(req, stream=True)
 
-  payload = json.loads(await r.aread())
-  if r.status_code >= 400:
+    if r.status_code in (429, 502, 503, 504):
+        await r.aread()
+        return None, True  # retryable
+
+    if r.status_code in (401, 403):
+        await r.aread()
+        token_plan_pool.mark_failed(token_key)
+        return None, False  # auth error, don't retry this key
+
+    if request_body.get("stream"):
+        stream = _stream_and_track(r.aiter_raw(), key_info, public_model, upstream="openai")
+        return StreamingResponse(
+            stream,
+            status_code=r.status_code,
+            headers=dict(r.headers),
+            media_type=r.headers.get("content-type"),
+        ), False
+
+    payload = json.loads(await r.aread())
+    if r.status_code >= 400:
+        token_plan_pool.mark_failed(token_key)
+        return JSONResponse(payload, status_code=r.status_code), False
+
+    # Record usage
+    usage = payload.get("usage", {}) if isinstance(payload, dict) else {}
+    input_tokens = int(usage.get("input_tokens", 0) or 0)
+    output_tokens = int(usage.get("output_tokens", 0) or 0)
+    cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
+    cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
+
+    if input_tokens or output_tokens or cache_read_tokens or cache_creation_tokens:
+        try:
+            cost_usd = _calculate_openai_cost_usd(public_model, input_tokens, output_tokens)
+            await portal_db.log_usage(
+                key_info["user_id"],
+                key_info["key_prefix"],
+                public_model,
+                input_tokens,
+                output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_creation_tokens=cache_creation_tokens,
+                cost_usd=cost_usd,
+            )
+        except Exception as e:
+            print(f"[Usage] Record failed: {e}")
+
+    token_plan_pool.mark_success(token_key)
+    return JSONResponse(payload, status_code=r.status_code), False
+
+
+async def _proxy_mimo_anthropic_messages(request: Request, key_info: dict, public_model: str, backend_model: str, body: dict):
+    request_body = dict(body)
+    request_body["model"] = backend_model
+    base_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in ("host", "content-length", "authorization", "x-api-key")
+    }
+    base_headers["content-type"] = "application/json"
+    base_headers.setdefault("anthropic-version", "2023-06-01")
+
+    # ── Phase 1: try Token Plan pool keys (Pro → Standard priority) ──
+    tried = 0
+    while True:
+        token_key = token_plan_pool.get_next()
+        if token_key is None:
+            break
+        tried += 1
+        print(f"[TokenPlan] Trying key plan={token_key.plan} prefix={token_key.key[:12]}... (attempt {tried})")
+        try:
+            result, retryable = await _try_mimo_request_with_key(
+                token_key, request_body, base_headers, key_info, public_model
+            )
+            if result is not None and not retryable:
+                return result
+            if result is not None and retryable:
+                # 429/502/503/504 — mark and try next
+                token_plan_pool.mark_failed(token_key)
+                continue
+        except Exception as e:
+            print(f"[TokenPlan] Exception with key prefix={token_key.key[:12]}...: {e}")
+            token_plan_pool.mark_failed(token_key)
+            continue
+
+        if tried > len(token_plan_pool.keys) * 2:
+            break  # safety valve
+
+    # ── Phase 2: fall back to default MIMO endpoint ──
+    print(f"[TokenPlan] Pool exhausted ({tried} attempts), falling back to default MIMO endpoint")
+    fallback_headers = dict(base_headers)
+    if MIMO_ANTHROPIC_API_KEY:
+        fallback_headers["x-api-key"] = MIMO_ANTHROPIC_API_KEY
+        fallback_headers["Authorization"] = f"Bearer {MIMO_ANTHROPIC_API_KEY}"
+
+    req = mimo_anthropic_client.build_request(
+        "POST",
+        "/v1/messages",
+        headers=fallback_headers,
+        content=json.dumps(request_body).encode("utf-8"),
+    )
+    r = await mimo_anthropic_client.send(req, stream=True)
+
+    if request_body.get("stream"):
+        stream = _stream_and_track(r.aiter_raw(), key_info, public_model, upstream="openai")
+        return StreamingResponse(
+            stream,
+            status_code=r.status_code,
+            headers=dict(r.headers),
+            media_type=r.headers.get("content-type"),
+        )
+
+    payload = json.loads(await r.aread())
+    if r.status_code >= 400:
+        return JSONResponse(payload, status_code=r.status_code)
+
+    usage = payload.get("usage", {}) if isinstance(payload, dict) else {}
+    input_tokens = int(usage.get("input_tokens", 0) or 0)
+    output_tokens = int(usage.get("output_tokens", 0) or 0)
+    cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
+    cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
+
+    if input_tokens or output_tokens or cache_read_tokens or cache_creation_tokens:
+        try:
+            cost_usd = _calculate_openai_cost_usd(public_model, input_tokens, output_tokens)
+            await portal_db.log_usage(
+                key_info["user_id"],
+                key_info["key_prefix"],
+                public_model,
+                input_tokens,
+                output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_creation_tokens=cache_creation_tokens,
+                cost_usd=cost_usd,
+            )
+        except Exception as e:
+            print(f"[Usage] Record failed: {e}")
+
     return JSONResponse(payload, status_code=r.status_code)
-
-  usage = payload.get("usage", {}) if isinstance(payload, dict) else {}
-  input_tokens = int(usage.get("input_tokens", 0) or 0)
-  output_tokens = int(usage.get("output_tokens", 0) or 0)
-  cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
-  cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
-
-  if input_tokens or output_tokens or cache_read_tokens or cache_creation_tokens:
-    try:
-      cost_usd = _calculate_openai_cost_usd(public_model, input_tokens, output_tokens)
-      await portal_db.log_usage(
-        key_info["user_id"],
-        key_info["key_prefix"],
-        public_model,
-        input_tokens,
-        output_tokens,
-        cache_read_tokens=cache_read_tokens,
-        cache_creation_tokens=cache_creation_tokens,
-        cost_usd=cost_usd,
-      )
-    except Exception as e:
-      print(f"[Usage] Record failed: {e}")
-
-  return JSONResponse(payload, status_code=r.status_code)
 
 
 async def _stream_and_track(aiter, key_info: dict, model: str, upstream: str = "kiro"):
@@ -2391,6 +2695,17 @@ async def list_responses_models():
 @app.get("/api/model-marketplace")
 async def model_marketplace():
   return JSONResponse(_model_marketplace_payload())
+
+@app.get("/api/admin/token-plan-pool")
+async def token_plan_pool_status():
+    """View Token Plan pool status (admin only)."""
+    return JSONResponse(token_plan_pool.status())
+
+@app.post("/api/admin/token-plan-pool/reload")
+async def token_plan_pool_reload():
+    """Reload Token Plan keys from config file."""
+    token_plan_pool.reload()
+    return JSONResponse({"ok": True, **token_plan_pool.status()})
 
 async def validate_proxy_auth(request: Request):
     # Support both Authorization: Bearer kp-xxx and x-api-key: kp-xxx (Anthropic SDK)
@@ -2972,8 +3287,7 @@ async def _proxy_image_playground_request(request: Request, action: str):
             if result is not None:
                 return result
         elif action == "edits":
-            ct = request.headers.get("content-type", "")
-            result = await _try_soruxgpt_image_edit(body, ct, _finalize_bg, u["uid"], usage_id)
+            result = await _try_soruxgpt_image_edit(body, _finalize_bg, u["uid"], usage_id)
             if result is not None:
                 return result
 
@@ -3260,160 +3574,6 @@ async def _run_soruxgpt_image_gen(task_id: str, prompt: str, n: int, size: str,
     _image_playground_log(f"generation error task={task_id} uid={uid}: {err_msg}")
 
 
-async def _run_soruxgpt_image_edit(task_id: str, prompt: str, image_b64s: list[str],
-                                    mask_b64: str | None, size: str, model: str,
-                                    _finalize_bg, uid: int, usage_id: int):
-    """Background task: call SoruxGPT Responses API with reference images."""
-    headers = {"Authorization": f"Bearer {SORUXGPT_API_KEY}", "Content-Type": "application/json"}
-    retryable_statuses = {408, 502, 503, 504}
-    prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-
-    def _collect_b64_values(obj, found: list[str]) -> None:
-        if isinstance(obj, dict):
-            for key, value in obj.items():
-                if key in {"b64_json", "image_b64", "partial_image_b64"} and isinstance(value, str) and value:
-                    found.append(value)
-                else:
-                    _collect_b64_values(value, found)
-        elif isinstance(obj, list):
-            for item in obj:
-                _collect_b64_values(item, found)
-
-    async def _save_image_bytes(image_bytes: bytes, index: int) -> dict | None:
-        try:
-            fname = f"playground_{prompt_hash[:16]}_{int(time.time())}_{index}.png"
-            fpath = GAME_IMAGE_DIR / fname
-            await asyncio.to_thread(fpath.write_bytes, image_bytes)
-            return {
-                "b64_json": base64.b64encode(image_bytes).decode("utf-8"),
-                "url": f"{GAME_IMAGE_URL_PREFIX}/{fname}",
-            }
-        except Exception:
-            _image_playground_log(f"edit image_save_failed task={task_id} uid={uid}")
-            return None
-
-    async def _items_from_b64s(b64_values: list[str]) -> list[dict]:
-        items = []
-        seen = set()
-        for b64 in b64_values:
-            if not b64 or b64 in seen:
-                continue
-            seen.add(b64)
-            try:
-                image_bytes = base64.b64decode(b64)
-            except Exception:
-                continue
-            item = await _save_image_bytes(image_bytes, len(items) + 1)
-            if item:
-                items.append(item)
-        return items
-
-    # Build Responses API payload with input_image
-    input_content = [{"type": "input_text", "text": prompt}]
-    for img_b64 in image_b64s:
-        input_content.append({
-            "type": "input_image",
-            "image_url": f"data:image/png;base64,{img_b64}",
-        })
-
-    tool: dict = {
-        "type": "image_generation",
-        "model": model,
-        "size": size,
-        "quality": "auto",
-        "output_format": "png",
-        "moderation": "auto",
-    }
-
-    if mask_b64:
-        tool["input_image_mask"] = {"image_url": f"data:image/png;base64,{mask_b64}"}
-
-    stream_payload = {
-        "model": "gpt-5.4-mini",
-        "input": [{"type": "message", "role": "user", "content": input_content}],
-        "tools": [tool],
-        "tool_choice": "auto",
-        "store": False,
-        "stream": True,
-    }
-
-    last_err = IMAGE_PLAYGROUND_GENERIC_ERROR
-    for attempt in range(2):
-        latest_by_output: dict[str, str] = {}
-        completed_b64s: list[str] = []
-        _image_playground_log(f"edit stream_start task={task_id} uid={uid} attempt={attempt + 1}")
-        try:
-            async with soruxgpt_image_client.stream(
-                "POST", "/responses", headers=headers, json=stream_payload, timeout=None
-            ) as resp:
-                _image_playground_log(
-                    f"edit stream_response task={task_id} uid={uid} attempt={attempt + 1} status={resp.status_code}"
-                )
-                if resp.status_code in retryable_statuses:
-                    last_err = f"SoruxGPT edit stream HTTP {resp.status_code}"
-                    if attempt < 1:
-                        await asyncio.sleep(2.0)
-                        continue
-                if resp.status_code >= 400:
-                    try:
-                        err_data = json.loads((await resp.aread()).decode("utf-8", errors="replace"))
-                        last_err = _extract_error_message(err_data) or f"SoruxGPT edit stream HTTP {resp.status_code}"
-                    except Exception:
-                        snippet = (await resp.aread())[:300]
-                        last_err = snippet.decode("utf-8", errors="replace") or f"SoruxGPT edit stream HTTP {resp.status_code}"
-                    _image_playground_log(f"edit stream_http_error task={task_id} uid={uid}: {last_err}")
-                    break
-
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    raw = line[6:].strip()
-                    if not raw or raw == "[DONE]":
-                        continue
-                    try:
-                        event = json.loads(raw)
-                    except Exception:
-                        continue
-
-                    event_type = event.get("type", "")
-                    if event_type == "response.image_generation_call.partial_image":
-                        b64 = event.get("partial_image_b64")
-                        if b64:
-                            output_key = str(event.get("output_index", 0))
-                            latest_by_output[output_key] = b64
-                    elif event_type == "response.completed":
-                        _collect_b64_values(event.get("response", {}), completed_b64s)
-                    elif event_type in {"response.failed", "response.incomplete"}:
-                        last_err = _extract_error_message(event) or event_type
-
-                b64_values = completed_b64s or list(latest_by_output.values())
-                if b64_values:
-                    items = await _items_from_b64s(b64_values)
-                    if items:
-                        result_json = json.dumps({"created": int(time.time()), "data": items})
-                        cost_usd = portal_db._calculate_cost_usd(model, 0, 0)
-                        asyncio.get_running_loop().run_in_executor(
-                            None, _finalize_bg, uid, usage_id, 0, 0, cost_usd, "success"
-                        )
-                        await portal_db.update_playground_task(task_id, "done", result_json=result_json)
-                        _image_playground_log(f"edit done task={task_id} uid={uid}")
-                        return
-                last_err = last_err or "SoruxGPT edit stream returned no image"
-        except Exception as exc:
-            _image_playground_log(
-                f"edit stream_exception task={task_id} uid={uid} attempt={attempt + 1}: {exc!r}"
-            )
-            last_err = f"SoruxGPT edit stream failed: {type(exc).__name__}"
-        if attempt < 1:
-            await asyncio.sleep(2.0)
-
-    asyncio.get_running_loop().run_in_executor(
-        None, _finalize_bg, uid, usage_id, 0, 0, 0.0, "error"
-    )
-    await portal_db.update_playground_task(task_id, "error", error_message=last_err)
-    _image_playground_log(f"edit error task={task_id} uid={uid}: {last_err}")
-
-
 async def _try_soruxgpt_image_gen(body: bytes, _finalize_bg, uid: int, usage_id: int):
     """Start image generation as a background task, return task_id for polling.
 
@@ -3446,80 +3606,15 @@ async def _try_soruxgpt_image_gen(body: bytes, _finalize_bg, uid: int, usage_id:
     return JSONResponse({"task_id": task_id, "status": "processing"}, status_code=202)
 
 
-async def _try_soruxgpt_image_edit(body: bytes, content_type: str, _finalize_bg, uid: int, usage_id: int):
-    """Parse multipart form data, extract reference images, generate via SoruxGPT Responses API."""
-    import email as _email
-    from email.message import Message
-
-    # Parse multipart form data
-    if "boundary=" not in (content_type or ""):
-        return JSONResponse(
-            {"error": {"message": "NEXUS image editing requires multipart form data with reference images."}},
-            status_code=400,
-        )
-
-    # Prepend Content-Type header so email parser can handle multipart body
-    mime_body = f"Content-Type: {content_type}\r\n\r\n".encode("utf-8") + body
-    msg: Message = _email.message_from_bytes(mime_body)
-
-    prompt = ""
-    size = "1024x1024"
-    model = "gpt-image-2"
-    image_parts: list[bytes] = []
-    mask_bytes: bytes | None = None
-
-    for part in msg.walk():
-        if part.get_content_maintype() == "multipart":
-            continue
-
-        name = part.get_param("name", header="content-disposition")
-        if not name:
-            continue
-
-        payload = part.get_payload(decode=True)
-        if payload is None:
-            continue
-
-        if name in ("prompt", "text"):
-            prompt = payload.decode("utf-8", errors="replace")
-        elif name == "size":
-            size = payload.decode("utf-8", errors="replace")
-        elif name == "model":
-            model = payload.decode("utf-8", errors="replace")
-        elif name == "image[]" or name == "image":
-            image_parts.append(payload)
-        elif name == "mask":
-            mask_bytes = payload
-
-    if not prompt:
-        return JSONResponse(
-            {"error": {"message": "Prompt is required for image editing."}},
-            status_code=400,
-        )
-
-    if not image_parts:
-        return JSONResponse(
-            {"error": {"message": "At least one reference image is required for editing."}},
-            status_code=400,
-        )
-
-    image_b64s: list[str] = []
-    for img_bytes in image_parts:
-        image_b64s.append(base64.b64encode(img_bytes).decode("utf-8"))
-
-    mask_b64 = base64.b64encode(mask_bytes).decode("utf-8") if mask_bytes else None
-
-    size = _normalize_soruxgpt_image_size(size)
-
-    task_id = str(uuid.uuid4())[:12]
-    await portal_db.create_playground_task(task_id)
-    await portal_db.cleanup_playground_tasks(ttl=600.0)
-
-    asyncio.create_task(
-        _run_soruxgpt_image_edit(task_id, prompt, image_b64s, mask_b64, size, model, _finalize_bg, uid, usage_id)
+async def _try_soruxgpt_image_edit(body: bytes, _finalize_bg, uid: int, usage_id: int):
+    """Image editing is not supported via SoruxGPT /images/generations."""
+    asyncio.get_running_loop().run_in_executor(
+        None, _finalize_bg, uid, usage_id, 0, 0, 0.0, "error"
     )
-
-    return JSONResponse({"task_id": task_id, "status": "processing"}, status_code=202)
+    return JSONResponse(
+        {"error": {"message": "NEXUS image editing is not available yet. Remove reference images and generate from text."}},
+        status_code=400,
+    )
 
 
 @app.post("/api/image-playground/images/generations")
